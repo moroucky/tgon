@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Satellite Tracking Simulator - Person Tracking Feature</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+     integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+     crossorigin=""/>
+    <style>
+        body {
+            font-family: 'Roboto Mono', monospace;
+            background-color: #03080D; 
+            color: #A8C5E0; 
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden; 
+        }
+
+        .menu-bar {
+            background-color: #081018; 
+            border-bottom: 1px solid #005066; 
+            padding: 0.5rem 1rem;
+            display: flex;
+            align-items: center;
+            flex-shrink: 0; 
+        }
+        .menu-bar ul { list-style: none; padding: 0; margin: 0; display: flex; }
+        .menu-bar li { margin-right: 1.5rem; font-size: 0.875rem; cursor: pointer; position: relative; }
+        .menu-bar li:hover { color: #FFFFFF; }
+        .menu-bar .dropdown-content { display: none; position: absolute; background-color: #081018; border: 1px solid #005066; min-width: 160px; z-index: 1000; padding: 0.5rem 0; }
+        .menu-bar .dropdown-content a { color: #A8C5E0; padding: 0.5rem 1rem; text-decoration: none; display: block; font-size: 0.875rem; }
+        .menu-bar .dropdown-content a:hover { background-color: #005066; color: #FFFFFF; }
+        .menu-bar li:hover .dropdown-content { display: block; }
+
+        .app-container { display: flex; flex-grow: 1; overflow: hidden; }
+
+        .sidebar {
+            padding: 1rem;
+            background-color: #050B12; 
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            overflow-y: auto; 
+            height: 100%; 
+            transition: width 0.3s ease, min-width 0.3s ease, padding 0.3s ease, opacity 0.3s ease;
+        }
+        .sidebar.hidden { width: 0 !important; min-width: 0 !important; padding: 0 !important; opacity: 0; overflow: hidden; }
+        .sidebar-left { width: 22%; min-width: 250px; border-right: 1px solid #005066; }
+        .sidebar-right { width: 25%; min-width: 280px; border-left: 1px solid #005066; }
+
+        .panel { background-color: transparent; border: 1px solid #00384d; padding: 0.75rem; }
+        .panel-title { font-size: 0.75rem; color: #527D9A; text-transform: uppercase; margin-bottom: 0.75rem; letter-spacing: 0.05em; border-bottom: 1px solid #00384d; padding-bottom: 0.25rem; }
+        .panel-content p, .panel-content div:not(.form-input-group):not(.person-profile-section):not(.person-simulation-placeholder):not(#personTrackingIconDisplay) { font-size: 0.875rem; margin-bottom: 0.25rem; }
+        .panel-content .data-label { color: #527D9A; display: inline-block; width: 80px; }
+        .panel-content .data-value { color: #A8C5E0; }
+        .panel-button { background-color: #005066; color: #FFFFFF; border: none; padding: 0.5rem 0.75rem; font-size: 0.75rem; text-transform: uppercase; cursor: pointer; width: 100%; margin-top: 0.5rem; }
+        .panel-button:hover { background-color: #006A8A; }
+
+        .central-area { flex-grow: 1; background-color: #081018; display: flex; position: relative; overflow: hidden; height: 100%; }
+        #map { width: 100%; height: 100%; background-color: #000000; }
+        
+        .leaflet-control-attribution a { color: #527D9A !important; }
+        .leaflet-control-zoom a { background-color: #081018 !important; color: #A8C5E0 !important; border-color: #005066 !important; }
+        .leaflet-control-zoom a:hover { background-color: #005066 !important; color: #FFFFFF !important; }
+        
+        .focus-target-map-icon-container { 
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: scaleInTargetReticle 1.5s ease-out forwards;
+            position: relative; 
+        }
+        .focus-target-map-icon-container svg {
+            width: 100%; 
+            height: 100%;
+            color: #00AEEF; 
+        }
+        .pulsing-dot {
+            position: absolute;
+            top: 50%; 
+            left: 50%;
+            width: 6px; 
+            height: 6px;
+            background-color: red;
+            border-radius: 50%;
+            transform: translate(-50%, -50%); 
+            animation: pulseDot 1.5s infinite ease-in-out;
+            z-index: 1; 
+        }
+        @keyframes scaleInTargetReticle {
+            0% {
+                transform: scale(3.5); 
+                opacity: 0.5;
+            }
+            70% {
+                transform: scale(1); 
+                opacity: 1;
+            }
+            100% {
+                transform: scale(1); 
+                opacity: 1; 
+            }
+        }
+        @keyframes pulseDot {
+            0% { transform: translate(-50%, -50%) scale(0.8); opacity: 0.7; }
+            50% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; }
+            100% { transform: translate(-50%, -50%) scale(0.8); opacity: 0.7; }
+        }
+        .animated-search-path {
+            stroke-dasharray: 1000;
+            stroke-dashoffset: 1000;
+            animation: drawSearchPath 2s linear forwards;
+            filter: drop-shadow(0 0 3px #00AEEF); /* Glow effect for the path */
+        }
+        @keyframes drawSearchPath {
+            to {
+                stroke-dashoffset: 0;
+            }
+        }
+        .path-end-marker-icon svg {
+            width: 24px; /* Adjusted size */
+            height: 24px; /* Adjusted size */
+            color: #FFD700; 
+            opacity: 0;
+            animation: fadeInEndMarker 0.5s 1.8s linear forwards; /* Delay to appear after path draws */
+        }
+        @keyframes fadeInEndMarker {
+            to { opacity: 1; }
+        }
+
+        .status-bar { background-color: #081018; border-top: 1px solid #005066; padding: 0.5rem 1rem; font-size: 0.75rem; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+        .status-bar span { margin-right: 1rem; }
+        .status-bar .emergency-stop { background-color: #D32F2F; color: white; border: none; padding: 0.25rem 0.75rem; cursor: pointer; }
+        .status-bar .emergency-stop:hover { background-color: #B71C1C; }
+
+        .form-input-group { margin-bottom: 0.75rem; }
+        .form-label { display: block; font-size: 0.75rem; color: #527D9A; margin-bottom: 0.25rem; }
+        .form-input { width: 100%; background-color: #03080D; border: 1px solid #00384d; color: #A8C5E0; padding: 0.375rem 0.5rem; font-size: 0.75rem; }
+        .form-input:focus { outline: none; border-color: #005066; box-shadow: 0 0 0 1px rgba(0, 80, 102, 0.5); }
+        .form-button { background-color: #005066; color: #FFFFFF; border: none; padding: 0.5rem 1rem; font-size: 0.75rem; text-transform: uppercase; cursor: pointer; width: 100%; margin-top: 0.5rem; }
+        .form-button:hover { background-color: #006A8A; }
+
+        .person-streaming-section { display: none; margin-top: 1rem; }
+        .person-profile-section { display: flex; gap: 0.75rem; margin-bottom: 1rem; align-items: flex-start; }
+        .person-profile-image-placeholder { width: 96px; height: 96px; background-color: #00384d; border: 1px solid #005066; display: flex; align-items: center; justify-content: center; color: #527D9A; font-size: 0.75rem; flex-shrink: 0; overflow: hidden;}
+        .person-profile-image-placeholder img#dynamicProfileImageEl { width: 100%; height: 100%; object-fit: cover;}
+        .person-profile-details { flex-grow: 1; }
+        .person-profile-details p { font-size: 0.75rem; margin-bottom: 0.125rem; }
+        .person-profile-details .data-label { color: #527D9A; display: inline-block; width: 70px; }
+        .person-simulation-placeholder { background-color: #03080D; border: 1px solid #00384d; padding: 0.75rem; margin-bottom: 0.75rem; min-height: 80px; display: flex; align-items: center; justify-content: center; color: #527D9A; font-size: 0.75rem; }
+        
+        #personTrackingIconDisplay {
+            width: 100%;
+            min-height: 60px; 
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-top: 1rem;
+            display: none; 
+            text-align: center; 
+            font-size: 0.875rem;
+        }
+
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'primary-border': '#005066',
+                        'panel-title-text': '#527D9A',
+                        'main-text': '#A8C5E0',
+                        'map-bg': '#081018',
+                        'page-bg': '#03080D',
+                        'sidebar-bg': '#050B12', 
+                        'panel-border': '#00384d',
+                        'button-bg': '#005066',
+                        'button-hover-bg': '#006A8A',
+                        'emergency-red': '#D32F2F',
+                        'emergency-red-hover': '#B71C1C',
+                    },
+                }
+            }
+        }
+    </script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+     integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+     crossorigin=""></script>
+</head>
+<body>
+    <svg width="0" height="0" style="position:absolute; display:none;">
+        <symbol viewBox="0 0 32 32" id="target-reticle-new">
+            <circle cx="16" cy="16" r="13" stroke="currentColor" stroke-width="1.5" fill="none" />
+            <rect x="13" y="13" width="6" height="6" fill="currentColor" opacity="0.7"/>
+            <line x1="16" y1="4" x2="16" y2="11" stroke="currentColor" stroke-width="2" />
+            <line x1="16" y1="21" x2="16" y2="28" stroke="currentColor" stroke-width="2" />
+            <line x1="4" y1="16" x2="11" y2="16" stroke="currentColor" stroke-width="2" />
+            <line x1="21" y1="16" x2="28" y2="16" stroke="currentColor" stroke-width="2" />
+            <line x1="12" y1="16" x2="20" y2="16" stroke="currentColor" stroke-width="2.5" />
+            <line x1="16" y1="12" x2="16" y2="20" stroke="currentColor" stroke-width="2.5" />
+        </symbol>
+        <symbol viewBox="0 0 100 100" id="animated-path-end-marker">
+            <path d="M50 15 L85 75 L15 75 Z" 
+                  stroke="currentColor" 
+                  stroke-width="6" 
+                  fill="none" 
+                  stroke-dasharray="12,6" 
+                  stroke-linejoin="round" 
+                  stroke-linecap="round"
+                  transform="rotate(0 50 50)"/> 
+            <path d="M50 15 Q20 45, 50 75 Q80 45, 50 15" 
+                  stroke="currentColor" 
+                  stroke-width="4" 
+                  fill="none" 
+                  stroke-dasharray="8,4" 
+                  stroke-linejoin="round" 
+                  stroke-linecap="round"
+                  transform="rotate(0 50 50)"/>
+        </symbol>
+    </svg>
+
+    <nav class="menu-bar">
+        <ul>
+            <li>File <div class="dropdown-content"> <a href="#" data-action="file-new">New</a> <a href="#" data-action="file-open-tle">Open TLE</a> <a href="#" data-action="file-save-config">Save Config</a> <a href="#" data-action="file-exit">Exit</a> </div> </li>
+            <li>View <div class="dropdown-content"> <a href="#" data-action="view-toggle-panels">Toggle Panels</a> <a href="#" data-action="view-fullscreen">Fullscreen</a> <a href="#" data-action="view-dark-light-mode">Dark/Light Mode</a> </div> </li>
+            <li>Satellites <div class="dropdown-content"> <a href="#" data-action="sat-add">Add</a> <a href="#" data-action="sat-remove">Remove</a> <a href="#" data-action="sat-choose-orbit">Choose Orbit Type</a> <a href="#" data-action="sat-select-db">Select from DB</a> </div> </li>
+            <li>Simulation <div class="dropdown-content"> <a href="#" data-action="sim-start">Start</a> <a href="#" data-action="sim-pause">Pause</a> <a href="#" data-action="sim-reset">Reset</a> <a href="#" data-action="sim-adjust-speed">Adjust Speed</a> </div> </li>
+            <li>Tools <div class="dropdown-content"> <a href="#" data-action="tools-ground-station">Ground Station Tools</a> <a href="#" data-action="tools-weather">Weather Overlay</a> <a href="#" data-action="tools-analysis">Analysis</a> </div> </li>
+            <li>Help <div class="dropdown-content"> <a href="#" data-action="help-about">About</a> <a href="#" data-action="help-docs">Documentation</a> <a href="#" data-action="help-updates">Check Updates</a> </div> </li>
+        </ul>
+    </nav>
+
+    <div class="app-container">
+        <aside class="sidebar sidebar-left" id="sidebarLeft">
+            <div class="panel">
+                <h2 class="panel-title">Satellite Info</h2>
+                <div class="panel-content">
+                    <p><span class="data-label">Name:</span> <span class="data-value" id="satName">ISS (ZARYA)</span></p>
+                    <p><span class="data-label">ID:</span> <span class="data-value" id="satId">25544U</span></p>
+                    <p><span class="data-label">Type:</span> <span class="data-value" id="satType">Space Station</span></p>
+                </div>
+            </div>
+            <div class="panel">
+                <h2 class="panel-title">Orbit Status</h2>
+                <div class="panel-content">
+                    <p><span class="data-label">Orbit:</span> <span class="data-value" id="orbitStatus">Low Earth Orbit</span></p>
+                    <p><span class="data-label">Latitude:</span> <span class="data-value" id="satLat">-33.8630°</span></p>
+                    <p><span class="data-label">Longitude:</span> <span class="data-value" id="satLon">151.2153°</span></p>
+                    <p><span class="data-label">Altitude:</span> <span class="data-value" id="satAlt">408.5 km</span></p>
+                </div>
+            </div>
+            <div class="panel">
+                <h2 class="panel-title">Dynamics</h2>
+                <div class="panel-content">
+                    <p><span class="data-label">Speed:</span> <span class="data-value" id="satSpeed">27,600 km/h</span></p>
+                    <p><span class="data-label">FOV:</span> <span class="data-value" id="satFov">2,500 km</span></p>
+                </div>
+            </div>
+            <div class="panel">
+                <button class="panel-button" data-action="sat-change-current">Change Current Satellite</button>
+            </div>
+        </aside>
+
+        <main class="central-area">
+            <div id="map"></div>
+        </main>
+
+        <aside class="sidebar sidebar-right" id="sidebarRight">
+            <div class="panel">
+                <h2 class="panel-title">Event Log</h2>
+                <div class="panel-content" id="eventLog" style="height: 100px; overflow-y: scroll; background-color: #03080D; border: 1px solid #00384d; padding: 0.25rem;">
+                </div>
+            </div>
+            <div class="panel">
+                <h2 class="panel-title">Live Graph (Altitude vs Time)</h2>
+                <div class="panel-content" id="liveGraphPlaceholder" style="height: 120px; background-color: #03080D; border: 1px solid #00384d; display:flex; align-items:center; justify-content:center;">
+                    [Graph Placeholder]
+                </div>
+            </div>
+            
+            <div class="panel" id="personTrackingPanel">
+                <h2 class="panel-title">Person Tracking</h2>
+                <form id="personSearchForm">
+                    <div class="form-input-group">
+                        <label for="personFullName" class="form-label">Full Name:</label>
+                        <input type="text" id="personFullName" name="personFullName" class="form-input" required>
+                    </div>
+                    <div class="form-input-group">
+                        <label for="personIdentifier" class="form-label">ID / Identifier:</label>
+                        <input type="text" id="personIdentifier" name="personIdentifier" class="form-input" required>
+                    </div>
+                    <button type="submit" class="form-button">Search Person</button>
+                </form>
+
+                <div class="person-streaming-section" id="personStreamingSection">
+                    <div class="person-profile-section">
+                        <div class="person-profile-image-placeholder" id="personProfileImage">
+                            <img id="dynamicProfileImageEl" src="https://placehold.co/96x96/00384d/A8C5E0?text=Image" alt="Profile Image">
+                        </div>
+                        <div class="person-profile-details">
+                            <p><span class="data-label">Name:</span> <span class="data-value" id="displayPersonFullName">-</span></p>
+                            <p><span class="data-label">ID:</span> <span class="data-value" id="displayPersonIdentifier">-</span></p>
+                        </div>
+                    </div>
+                    <button class="panel-button" id="startPersonTrackingButton" data-action="person-start-tracking">Start Tracking</button>
+                    <div id="personTrackingIconDisplay">
+                    </div>
+                    <div class="person-simulation-placeholder" id="personMapPlaceholder">[Location Tracking on Map]</div>
+                    <div class="person-simulation-placeholder" id="personBiometricPlaceholder">[Biometrics]</div>
+                    <div class="person-simulation-placeholder" id="personActivityLogPlaceholder">[Activity Log]</div>
+                </div>
+            </div>
+            
+            <div class="panel">
+                <h2 class="panel-title">Next Pass</h2>
+                <div class="panel-content">
+                    <p><span class="data-label">Over:</span> <span class="data-value" id="nextPassLocation">Selected Point</span></p>
+                    <p><span class="data-label">In:</span> <span class="data-value" id="nextPassTime">01:23:45</span></p>
+                </div>
+            </div>
+            <div class="panel">
+                <button class="panel-button" data-action="tools-view-tle">View TLE Data</button>
+                <button class="panel-button" data-action="tools-export-analysis">Export Analysis</button>
+            </div>
+        </aside>
+    </div>
+
+    <footer class="status-bar">
+        <div>
+            <span>Selected Satellite: <span id="statusSatName" class="text-white">ISS (ZARYA)</span></span>
+            <span>Simulation Time: <span id="statusSimTime" class="text-white">00:00:00</span></span>
+            <span>Speed: <span id="statusSimSpeed" class="text-white">Real-time</span></span>
+        </div>
+        <button class="emergency-stop" data-action="sim-emergency-stop">EMERGENCY STOP</button>
+    </footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            let searchedPersonData = null; 
+            let personTargetReticleMarker = null; 
+            let focusTargetAnimationTimeout = null; 
+            let animatedSearchPathLayer = null;
+            let animatedSearchEndMarker = null;
+            let simSeconds = 0;
+            let faceInterval;
+            const preloadedImageSources = [];
+
+            const sidebarLeft = document.getElementById('sidebarLeft');
+            const sidebarRight = document.getElementById('sidebarRight');
+            const eventLog = document.getElementById('eventLog');
+            const simTimeElement = document.getElementById('statusSimTime');
+            
+            function updateSimulationTime() {
+                if (simTimeElement) {
+                    simSeconds++;
+                    const hours = String(Math.floor(simSeconds / 3600)).padStart(2, '0');
+                    const minutes = String(Math.floor((simSeconds % 3600) / 60)).padStart(2, '0');
+                    const seconds = String(simSeconds % 60).padStart(2, '0');
+                    simTimeElement.textContent = `${hours}:${minutes}:${seconds}`;
+                }
+            }
+            setInterval(updateSimulationTime, 1000);
+
+            function updateRealTime() {
+                const realTimeUpdateElement = document.querySelector('.top-header-bar .status-indicators span:last-child');
+                if (realTimeUpdateElement) { 
+                    const now = new Date();
+                    const timeString = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                    realTimeUpdateElement.textContent = `Last Update: ${timeString}`;
+                }
+            }
+            updateRealTime();
+            setInterval(updateRealTime, 1000);
+
+            function logEvent(message) {
+                if (eventLog) {
+                    const time = new Date().toLocaleTimeString('en-US');
+                    const p = document.createElement('p');
+                    p.className = 'text-xs';
+                    p.textContent = `[${time}] ${message}`;
+                    eventLog.appendChild(p);
+                    eventLog.scrollTop = eventLog.scrollHeight; 
+                }
+            }
+            logEvent("UI Loaded. Waiting for simulation start.");
+
+            const menuItems = document.querySelectorAll('.menu-bar a[data-action]');
+            menuItems.forEach(item => {
+                item.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    const action = item.getAttribute('data-action');
+                    logEvent(`Menu action: ${action}`);
+                    if (action === 'view-toggle-panels') {
+                        sidebarLeft.classList.toggle('hidden');
+                        sidebarRight.classList.toggle('hidden');
+                        logEvent(`Panels ${sidebarLeft.classList.contains('hidden') ? 'hidden' : 'shown'}`);
+                        if (map) {
+                            setTimeout(() => { map.invalidateSize() }, 310); 
+                        }
+                    }
+                    if (action === 'file-exit') {
+                        if(confirm('Are you sure you want to exit? (This is a simulation)')) {
+                            logEvent('Exit action initiated.');
+                        }
+                    }
+                });
+            });
+
+            const panelButtons = document.querySelectorAll('.panel-button, .emergency-stop');
+            panelButtons.forEach(button => {
+                button.addEventListener('click', (event) => {
+                    const action = button.getAttribute('data-action');
+                    if(action && action !== 'person-start-tracking'){ 
+                        logEvent(`Button action: ${action}`);
+                         if (action === 'sim-emergency-stop') {
+                            logEvent('EMERGENCY STOP activated!');
+                        }
+                    }
+                });
+            });
+
+            const map = L.map('map', {
+                center: [20, 0], 
+                zoom: 2,         
+                zoomControl: true 
+            });
+            map.zoomControl.setPosition('bottomright');
+
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+                subdomains: 'abcd', 
+                maxZoom: 19
+            }).addTo(map);
+            
+            const personSearchForm = document.getElementById('personSearchForm');
+            const personStreamingSection = document.getElementById('personStreamingSection');
+            const displayPersonFullName = document.getElementById('displayPersonFullName');
+            const displayPersonIdentifier = document.getElementById('displayPersonIdentifier');
+            const personProfileImageContainer = document.getElementById('personProfileImage');
+            const dynamicProfileImageElement = document.getElementById('dynamicProfileImageEl');
+            const startPersonTrackingButton = document.getElementById('startPersonTrackingButton');
+            const personTrackingIconDisplay = document.getElementById('personTrackingIconDisplay');
+            const personMapPlaceholder = document.getElementById('personMapPlaceholder');
+            
+            function preloadImages(count, callback) {
+                const imageUrlBase = "https://thispersondoesnotexist.com/";
+                let imagesAttempted = 0;
+                let imagesLoadedSuccessfully = 0;
+                preloadedImageSources.length = 0;
+                const placeholderOnError = 'https://placehold.co/96x96/00384d/A8C5E0?text=Error';
+                
+                dynamicProfileImageElement.style.display = 'none';
+                personProfileImageContainer.innerHTML = '<div class="w-full h-full flex items-center justify-center text-xs">Preloading images...</div>';
+
+                if (count === 0) {
+                    callback();
+                    return;
+                }
+
+                for (let i = 0; i < count; i++) {
+                    const img = new Image();
+                    img.onload = () => {
+                        preloadedImageSources.push(img.src);
+                        imagesLoadedSuccessfully++;
+                        imagesAttempted++;
+                        if (imagesAttempted === count) {
+                            callback();
+                        }
+                    };
+                    img.onerror = () => {
+                        preloadedImageSources.push(placeholderOnError);
+                        imagesAttempted++;
+                        if (imagesAttempted === count) {
+                            callback();
+                        }
+                    };
+                    img.src = `${imageUrlBase}?timestamp=${new Date().getTime() + i}`;
+                }
+            }
+
+            function animateSearchPathOnMap(targetLat, targetLng, onComplete) {
+                if (animatedSearchPathLayer) map.removeLayer(animatedSearchPathLayer);
+                if (animatedSearchEndMarker) map.removeLayer(animatedSearchEndMarker);
+
+                const mapBounds = map.getBounds();
+                const startLng = mapBounds.getWest() + (mapBounds.getEast() - mapBounds.getWest()) * 0.1;
+                const endLng = mapBounds.getWest() + (mapBounds.getEast() - mapBounds.getWest()) * 0.9;
+                const midLat = (mapBounds.getNorth() + mapBounds.getSouth()) / 2;
+                
+                const startPoint = [midLat + (Math.random() - 0.5) * 10, startLng];
+                const endPoint = [targetLat, targetLng];
+
+                const controlPoint1 = [
+                    startPoint[0] + (endPoint[0] - startPoint[0]) * 0.25 + (Math.random() - 0.5) * 30, // Y-variation
+                    startPoint[1] + (endPoint[1] - startPoint[1]) * 0.33
+                ];
+                const controlPoint2 = [
+                    startPoint[0] + (endPoint[0] - startPoint[0]) * 0.75 - (Math.random() - 0.5) * 30, // Y-variation
+                    startPoint[1] + (endPoint[1] - startPoint[1]) * 0.66
+                ];
+                
+                const curvePoints = [];
+                for (let t = 0; t <= 1; t += 0.02) { 
+                    const p0 = startPoint; const p1 = controlPoint1; const p2 = controlPoint2; const p3 = endPoint;
+                    const mt = 1 - t;
+                    const lat = mt*mt*mt*p0[0] + 3*mt*mt*t*p1[0] + 3*mt*t*t*p2[0] + t*t*t*p3[0];
+                    const lng = mt*mt*mt*p0[1] + 3*mt*mt*t*p1[1] + 3*mt*t*t*p2[1] + t*t*t*p3[1];
+                    curvePoints.push([lat, lng]);
+                }
+
+                animatedSearchPathLayer = L.polyline(curvePoints, { color: '#00AEEF', weight: 2, className: 'animated-search-path' }).addTo(map);
+                
+                const endMarkerIconHtml = `<div class="path-end-marker-icon"><svg><use xlink:href="#animated-path-end-marker"></use></svg></div>`;
+                const endMarkerIcon = L.divIcon({ html: endMarkerIconHtml, className: '', iconSize: [24,24], iconAnchor: [12,12] });
+                animatedSearchEndMarker = L.marker(endPoint, {icon: endMarkerIcon}).addTo(map);
+
+                setTimeout(() => {
+                    if (animatedSearchPathLayer) map.removeLayer(animatedSearchPathLayer);
+                    if (animatedSearchEndMarker) map.removeLayer(animatedSearchEndMarker);
+                    animatedSearchPathLayer = null;
+                    animatedSearchEndMarker = null;
+                    if (onComplete) onComplete();
+                }, 2500); 
+            }
+
+
+            if (personSearchForm) {
+                personSearchForm.addEventListener('submit', function(event) {
+                    event.preventDefault(); 
+                    const fullName = document.getElementById('personFullName').value;
+                    const identifier = document.getElementById('personIdentifier').value;
+                    logEvent(`Person search initiated for: ${fullName} (ID: ${identifier})`);
+                    displayPersonFullName.textContent = fullName || '-';
+                    displayPersonIdentifier.textContent = identifier || '-';
+                    personStreamingSection.style.display = 'block'; 
+                    personTrackingIconDisplay.style.display = 'none'; 
+                    personTrackingIconDisplay.innerHTML = ''; 
+                    personMapPlaceholder.textContent = 'Searching for location...'; 
+
+                    if (faceInterval) clearInterval(faceInterval);
+                    if (personTargetReticleMarker) map.removeLayer(personTargetReticleMarker);
+                    if (focusTargetAnimationTimeout) clearTimeout(focusTargetAnimationTimeout);
+                    if (animatedSearchPathLayer) map.removeLayer(animatedSearchPathLayer);
+                    if (animatedSearchEndMarker) map.removeLayer(animatedSearchEndMarker);
+                    
+                    preloadImages(5, () => {
+                        personProfileImageContainer.innerHTML = ''; 
+                        personProfileImageContainer.appendChild(dynamicProfileImageElement);
+                        dynamicProfileImageElement.style.display = 'block';
+
+                        if (preloadedImageSources.length === 0) {
+                            dynamicProfileImageElement.src = `https://placehold.co/96x96/00384d/A8C5E0?text=No+Images`;
+                            dynamicProfileImageElement.alt = "No images loaded";
+                            logEvent(`Failed to preload any images for ${fullName}.`);
+                            searchedPersonData = {
+                                fullName: fullName,
+                                identifier: identifier,
+                                lat: (Math.random() * 180 - 90).toFixed(4),
+                                lng: (Math.random() * 360 - 180).toFixed(4),
+                                imageSrc: dynamicProfileImageElement.src 
+                            };
+                            animateSearchPathOnMap(parseFloat(searchedPersonData.lat), parseFloat(searchedPersonData.lng), () => {
+                                personMapPlaceholder.textContent = `Location data ready for ${fullName}. Click 'Start Tracking'.`;
+                                logEvent(`Map search animation complete for ${fullName}.`);
+                            });
+                            return;
+                        }
+                        let displayCounter = 0;
+                        const totalDisplayDuration = 1500; 
+                        const cycleDuration = 50; 
+                        const displayCycles = totalDisplayDuration / cycleDuration;
+                        let imageIndex = 0;
+                        faceInterval = setInterval(() => {
+                            displayCounter++;
+                            dynamicProfileImageElement.src = preloadedImageSources[imageIndex % preloadedImageSources.length];
+                            dynamicProfileImageElement.alt = "Searching...";
+                            imageIndex++;
+                            if (displayCounter >= displayCycles) {
+                                clearInterval(faceInterval);
+                                const finalImageIndex = (imageIndex - 1 + preloadedImageSources.length) % preloadedImageSources.length; 
+                                const finalImageSrc = preloadedImageSources[finalImageIndex] || `https://placehold.co/96x96/00384d/A8C5E0?text=${encodeURIComponent(fullName.split(' ')[0] || 'User')}`;
+                                
+                                dynamicProfileImageElement.src = finalImageSrc;
+                                dynamicProfileImageElement.alt = `Profile image of ${fullName}`;
+                                logEvent(`Profile image set for ${fullName}. Starting map search animation.`);
+                                
+                                searchedPersonData = {
+                                    fullName: fullName,
+                                    identifier: identifier,
+                                    lat: (Math.random() * 180 - 90).toFixed(4), 
+                                    lng: (Math.random() * 360 - 180).toFixed(4),
+                                    imageSrc: finalImageSrc 
+                                };
+                                
+                                animateSearchPathOnMap(parseFloat(searchedPersonData.lat), parseFloat(searchedPersonData.lng), () => {
+                                    personMapPlaceholder.textContent = `Location data ready for ${fullName}. Click 'Start Tracking'.`;
+                                    logEvent(`Map search animation complete for ${fullName}.`);
+                                });
+                            }
+                        }, cycleDuration);
+                    });
+                });
+            }
+
+            if(startPersonTrackingButton && personTrackingIconDisplay) {
+                startPersonTrackingButton.addEventListener('click', () => {
+                    if (!searchedPersonData) {
+                        logEvent('No person data to track. Please search first.');
+                        personTrackingIconDisplay.innerHTML = '<div class="text-xs text-center p-2 text-red-400">Search for a person first!</div>';
+                        personTrackingIconDisplay.style.display = 'flex';
+                        return;
+                    }
+
+                    logEvent(`Tracking initiated for ${searchedPersonData.fullName}.`);
+                    personTrackingIconDisplay.innerHTML = '<div class="text-xs text-center p-2">Acquiring target signal...</div>';
+                    personTrackingIconDisplay.style.display = 'flex'; 
+                    
+                    document.getElementById('personMapPlaceholder').style.display = 'none';
+                    document.getElementById('personBiometricPlaceholder').style.display = 'none';
+                    document.getElementById('personActivityLogPlaceholder').style.display = 'none';
+
+                    if (focusTargetAnimationTimeout) clearTimeout(focusTargetAnimationTimeout);
+                    if (personTargetReticleMarker) map.removeLayer(personTargetReticleMarker); 
+
+                    focusTargetAnimationTimeout = setTimeout(() => {
+                        personTrackingIconDisplay.innerHTML = 'Target Acquired.'; 
+                        logEvent(`Target acquired for ${searchedPersonData.fullName}. Focusing on map.`);
+                        
+                        const targetLatLng = [parseFloat(searchedPersonData.lat), parseFloat(searchedPersonData.lng)];
+                        map.flyTo(targetLatLng, 13, { 
+                            animate: true,
+                            duration: 1.0 
+                        });
+
+                        const focusIconHtml = `<div class="focus-target-map-icon-container"><svg><use xlink:href="#target-reticle-new"></use></svg><div class="pulsing-dot"></div></div>`;
+                        const focusDivIcon = L.divIcon({
+                            html: focusIconHtml,
+                            className: '', 
+                            iconSize: [64, 64], 
+                            iconAnchor: [32, 32]  
+                        });
+                        personTargetReticleMarker = L.marker(targetLatLng, {icon: focusDivIcon, zIndexOffset: 1000}).addTo(map)
+                            .bindPopup(`<b>${searchedPersonData.fullName}</b><br>ID: ${searchedPersonData.identifier}<br>Location: ${targetLatLng[0]}, ${targetLatLng[1]}`)
+                            .openPopup();
+                        
+                        personMapPlaceholder.textContent = `Tracking ${searchedPersonData.fullName} at Lat ${targetLatLng[0]}, Lng ${targetLatLng[1]}`;
+                        logEvent(`Focus target reticle displayed on map for ${searchedPersonData.fullName}.`);
+                        
+                    }, 1500); 
+                });
+            }
+        });
+    </script>
+</body>
+</html>
+
